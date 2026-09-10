@@ -1,0 +1,5 @@
+source,date_accessed,url_or_file,version,license,notes,organism
+name_rules,2026-09-10,src/prior/name_rule.py,1.0,internal rule set,"Missing edges are incomplete rules, not impossibility.",
+KEGG+Reactome,2026-09-10,/personal/workspace/TMO-agent-prior/kegg,rest-current,KEGG academic / Reactome CC,"Missing edges are incomplete mapping, not impossibility.",human
+STRING,2026-09-10,/personal/workspace/TMO-agent-prior/string,v12,STRING CC BY 4.0,STRING 9606 edges aligned to bundle proteins.,
+STITCH,2026-09-10,/personal/workspace/TMO-agent-prior/stitch/9606.protein_chemical.links.detailed.v5.0.tsv.gz,v5.0,STITCH / STRING CC,213 STITCH edges,
