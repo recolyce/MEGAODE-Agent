@@ -26,53 +26,80 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-from sklearn.linear_model import Ridge
+import torch
+from torch import nn
 
 from src.curator.bundle import ModelingBundle
-from src.models.base import split_context
-from src.prior.features import pathway_design
+from src.models.base import resolve_device, split_context
+from src.models.graph_ode import normalized_adjacency
 
 
-class PathwayEmbRidge:
-    name = "pathway_emb_ridge"
+class PriorGraphODE:
+    name = "prior_graph_ode"
     requires_prior = True
 
-    def __init__(self, alpha: float = 10.0) -> None:
-        self.alpha = alpha
-        self.model_ = Ridge(alpha=alpha)
-        self.membership: dict[str, list[str]] = {}
-        self.weight_: np.ndarray | None = None
+    def __init__(self, hidden: int = 12, lr: float = 1e-3, epochs: int = 20) -> None:
+        self.hidden = hidden
+        self.lr = lr
+        self.epochs = epochs
+        self.device = resolve_device("auto")
+        self.model_ = None
+        self.adj_ = None
+        self.n_expr_ = 0
 
-    def fit(self, bundle: ModelingBundle) -> "PathwayEmbRidge":
-        if bundle.prior is None:
-            raise RuntimeError("needs bundle.prior")
-        self.membership = getattr(bundle.prior, "membership", {}) or {}
-        expr, ctx = split_context(bundle.train.X, bundle.n_expr)
-        path = pathway_design(expr, list(bundle.x_features), self.membership)
-        weight = np.ones((1, expr.shape[1]), dtype=float)
-        feats = getattr(bundle.prior, "features", None)
-        emb = getattr(feats, "protein_emb", None) if feats is not None else None
-        if emb is not None:
-            emb = np.asarray(emb, dtype=float)
-            if emb.shape[0] == expr.shape[1]:
-                nrm = np.linalg.norm(emb, axis=1)
-                nrm = nrm / (float(np.max(nrm)) + 1e-8)
-                weight = (0.5 + 0.5 * nrm).reshape(1, -1)
-        self.weight_ = weight
-        x = np.hstack([expr * weight, path, ctx])
-        self.model_.fit(x, bundle.train.Y)
+    def fit(self, bundle: ModelingBundle) -> "PriorGraphODE":
+        if bundle.prior is None or bundle.prior.laplacian is None:
+            raise RuntimeError("needs prior.laplacian")
+        self.n_expr_ = bundle.n_expr
+        lap = np.asarray(bundle.prior.laplacian[: self.n_expr_, : self.n_expr_], dtype=float)
+        self.adj_ = normalized_adjacency(lap)
+        expr, ctx = split_context(bundle.train.X, self.n_expr_)
+        n_out = bundle.train.Y.shape[1]
+        n_ctx = ctx.shape[1]
+        model = nn.Module()
+        model.enc = nn.Linear(1, self.hidden)
+        model.gcn = nn.Linear(self.hidden, self.hidden)
+        model.head = nn.Linear(self.n_expr_ * self.hidden + n_ctx, n_out)
+        model = model.to(self.device)
+        adj = torch.as_tensor(self.adj_, dtype=torch.float32, device=self.device)
+        opt = torch.optim.Adam(model.parameters(), lr=self.lr)
+        xt = torch.as_tensor(expr, dtype=torch.float32, device=self.device)
+        ct = torch.as_tensor(ctx, dtype=torch.float32, device=self.device)
+        yt = torch.as_tensor(bundle.train.Y, dtype=torch.float32, device=self.device)
+        model.train()
+        for _ in range(self.epochs):
+            opt.zero_grad(set_to_none=True)
+            h = model.enc(xt.unsqueeze(-1))
+            dt = ((ct[:, 1] - ct[:, 0]) / 2.0).view(-1, 1, 1)
+            for _step in range(2):
+                k1 = torch.nn.functional.softplus(torch.matmul(adj, model.gcn(h)))
+                k2 = torch.nn.functional.softplus(torch.matmul(adj, model.gcn(h + dt * k1)))
+                h = h + 0.5 * dt * (k1 + k2)
+            pred = model.head(torch.cat([h.reshape(h.size(0), -1), ct], dim=1))
+            torch.mean((pred - yt) ** 2).backward()
+            opt.step()
+        self.model_ = model
         return self
 
-    def _design(self, x: np.ndarray, bundle: ModelingBundle) -> np.ndarray:
-        expr, ctx = split_context(x, bundle.n_expr)
-        path = pathway_design(expr, list(bundle.x_features), self.membership)
-        return np.hstack([expr * self.weight_, path, ctx])
-
     def predict(self, bundle: ModelingBundle) -> np.ndarray:
-        return np.asarray(self.model_.predict(self._design(bundle.test.X, bundle)), dtype=float)
+        expr, ctx = split_context(bundle.test.X, self.n_expr_)
+        model = self.model_
+        model.eval()
+        with torch.no_grad():
+            xt = torch.as_tensor(expr, dtype=torch.float32, device=self.device)
+            ct = torch.as_tensor(ctx, dtype=torch.float32, device=self.device)
+            adj = torch.as_tensor(self.adj_, dtype=torch.float32, device=self.device)
+            h = model.enc(xt.unsqueeze(-1))
+            dt = ((ct[:, 1] - ct[:, 0]) / 2.0).view(-1, 1, 1)
+            for _step in range(2):
+                k1 = torch.nn.functional.softplus(torch.matmul(adj, model.gcn(h)))
+                k2 = torch.nn.functional.softplus(torch.matmul(adj, model.gcn(h + dt * k1)))
+                h = h + 0.5 * dt * (k1 + k2)
+            pred = model.head(torch.cat([h.reshape(h.size(0), -1), ct], dim=1))
+        return pred.cpu().numpy()
 
     def params(self) -> dict[str, Any]:
-        return {"model": self.name, "alpha": float(self.alpha)}
+        return {"model": self.name, "hidden": self.hidden, "epochs": self.epochs}
 '''
 
 SYSTEM = """You write ONE new last_interval model. You have tools. Each turn reply with ONE JSON object, no markdown.
@@ -80,25 +107,26 @@ SYSTEM = """You write ONE new last_interval model. You have tools. Each turn rep
 Tools:
 {"tool":"list_installed_packages","args":{"query":"optional substring"}}
 {"tool":"install_python_packages","args":{"packages":["lightgbm"]}}
-{"tool":"run_terminal","args":{"command":"PYTHONPATH=. python -c 'import lightgbm; print(lightgbm.__version__)'"}}
-{"tool":"read_repo_file","args":{"path":"src/models/classic.py"}}
+{"tool":"run_terminal","args":{"command":"PYTHONPATH=. python -c 'import torch; print(torch.__version__)'"}}
+{"tool":"read_repo_file","args":{"path":"src/models/graph_ode.py"}}
 {"tool":"write_generated_model","args":{"model_name":"snake","class_name":"Pascal","code":"full module text"}}
 {"tool":"smoke_generated_model","args":{"model_name":"snake"}}
 {"done":true,"model_name":"snake","reason":"one sentence"}
 
-Workflow: list_installed_packages → install anything extra you need → write_generated_model → smoke_generated_model → done.
+Workflow: list_installed_packages → read src/models/graph_ode.py → write_generated_model → smoke_generated_model → done.
 run_terminal is only python/pip in this repo. Do not install from git URLs.
 
 Model rules:
-- New snake_case name, not ridge/pls/prior_gated_ridge/prior_fusion_ridge/laplacian_ridge/pathway_ridge.
-- Class: name, requires_prior, fit(bundle), predict(bundle), params().
+- The new model MUST be a prior-injected dynamical ODE (same family as graph_omics_ode):
+  protein+metabolite graph or embedding-conditioned vector field, integrate hidden state over last_interval dt (RK2/RK4), then a head to both-omics Y.
+- Task is multimodal: X = [proteins | metabolites | context], Y = [proteins | metabolites] at the next time.
+- Use bundle.prior.laplacian / features.adjacency / protein_emb / metabolite_emb. Read graph_ode.normalized_adjacency.
+- New snake_case name. Do NOT write ridge, elastic-net, GBM, output Laplacian smoother, or copy graph_omics_ode's class name.
+- Class: name, requires_prior=True, fit(bundle), predict(bundle), params().
 - predict uses only bundle.test.X. numpy arrays have no .values (use np.asarray).
-- bundle.prior.membership / .laplacian / .features.protein_emb are available.
-  from src.prior.features import pathway_design
-  from src.models.base import split_context
 - Generated code may import any INSTALLED scientific package. It must NOT import os, sys,
   subprocess, socket, pathlib, requests, urllib. Use tools to pip-install missing packages.
-- Keep the model small. No downloads inside fit/predict.
+- Keep it small (few epochs). No downloads inside fit/predict.
 
 Example pattern you may adapt (change the name):
 """ + EXAMPLE

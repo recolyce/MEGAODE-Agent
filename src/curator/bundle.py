@@ -31,6 +31,8 @@ class ModelingBundle:
     y_features: list[str]
     context_names: list[str]
     n_expr: int
+    n_protein: int
+    n_metabolite: int
     train: SplitArrays
     val: SplitArrays
     test: SplitArrays
@@ -41,6 +43,16 @@ class ModelingBundle:
     preprocess_params: dict[str, Any]
     warnings: list[str] = field(default_factory=list)
     prior: Any | None = None
+
+    def is_multimodal(self) -> bool:
+        return self.direction == "multimodal" or (
+            "proteomics" in str(self.x_modality) and "metabolomics" in str(self.x_modality)
+        )
+
+    def prior_relationship(self) -> str:
+        if self.is_multimodal():
+            return "joint"
+        return "protein_to_pathway" if self.x_modality == "proteomics" else "metabolite_to_pathway"
 
     def attach_prior(self, prior: Any) -> "ModelingBundle":
         self.prior = prior
@@ -70,6 +82,8 @@ class ModelingBundle:
             "y_features": self.y_features,
             "context_names": self.context_names,
             "n_expr": self.n_expr,
+            "n_protein": self.n_protein,
+            "n_metabolite": self.n_metabolite,
             "protocol": self.protocol,
             "preprocess_params": self.preprocess_params,
             "warnings": self.warnings,
@@ -102,6 +116,8 @@ class ModelingBundle:
             y_features=list(payload["y_features"]),
             context_names=list(payload["context_names"]),
             n_expr=int(payload["n_expr"]),
+            n_protein=int(payload.get("n_protein") or payload["n_expr"]),
+            n_metabolite=int(payload.get("n_metabolite") or 0),
             train=splits["train"],
             val=splits["val"],
             test=splits["test"],

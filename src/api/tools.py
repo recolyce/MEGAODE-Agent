@@ -14,9 +14,8 @@ from src.curator.run import run as curate_run
 from src.curator.tasks.last_interval import detect_lag_mode
 from src.eval.evaluator import evaluate_models
 from src.eval.metrics import median_pcc
-from src.interpretation.attribution import attribute_models
 from src.interpretation.contribution import compute_contributions
-from src.models.registry import MODELS, ModelRegistry
+from src.models.registry import MODELS, ModelRegistry, model_role
 from src.prior.registry import PriorRegistry, annotation_prior_hints
 
 
@@ -44,7 +43,10 @@ def inspect_dataset(source: str) -> dict[str, Any]:
         "recommended_unit": recommended_unit,
         "recommended_organism": organism,
         "warnings": list(data.warnings),
-        "available_models": [{"name": name, "requires_prior": need} for name, (_f, need) in MODELS.items()],
+        "available_models": [
+            {"name": name, "requires_prior": need, "role": model_role(name)}
+            for name, (_f, need) in MODELS.items()
+        ],
         "available_priors": PriorRegistry().available(),
         "prior_hints": annotation_prior_hints(data),
     }
@@ -56,11 +58,12 @@ def curate_dataset(
     task: str = "last_interval",
     unit: str | None = None,
     direction: str | None = None,
+    directions: list[str] | None = None,
     n_hv: int = 512,
 ) -> dict[str, Any]:
     units = [unit] if unit else None
-    directions = [direction] if direction else None
-    paths = curate_run(Path(source), task, Path(artifacts), units, n_hv, directions)
+    wanted = directions if directions is not None else ([direction] if direction else None)
+    paths = curate_run(Path(source), task, Path(artifacts), units, n_hv, wanted)
     summaries = []
     for path in paths:
         bundle = ModelingBundle.load(path)
@@ -91,7 +94,7 @@ def build_priors(
 ) -> dict[str, Any]:
     data = load_biomaster(Path(source))
     bundle = ModelingBundle.load(Path(bundle_path))
-    rel = "protein_to_pathway" if bundle.x_modality == "proteomics" else "metabolite_to_pathway"
+    rel = bundle.prior_relationship()
     registry = PriorRegistry()
     prior = registry.build(
         data,
@@ -122,7 +125,7 @@ def fit_models(
     needs_prior = any(catalog.get(name, False) for name in models)
     if needs_prior or prior_backend:
         data = load_biomaster(Path(source))
-        rel = "protein_to_pathway" if bundle.x_modality == "proteomics" else "metabolite_to_pathway"
+        rel = bundle.prior_relationship()
         prior = PriorRegistry().build(
             data,
             bundle.x_features,
@@ -172,7 +175,7 @@ def attribute_selected_models(
     organism: str = "human",
     prior_sources: list[str] | None = None,
 ) -> dict[str, Any]:
-    return attribute_models(
+    return compute_contributions(
         source,
         bundle_path,
         models,
@@ -192,10 +195,11 @@ def evaluate_selected_models(
     organism: str = "human",
     prior_sources: list[str] | None = None,
     round_id: int = 1,
+    n_trials: int = 15,
 ) -> dict[str, Any]:
     bundle = ModelingBundle.load(Path(bundle_path))
     data = load_biomaster(Path(source))
-    rel = "protein_to_pathway" if bundle.x_modality == "proteomics" else "metabolite_to_pathway"
+    rel = bundle.prior_relationship()
     prior = PriorRegistry().build(
         data,
         bundle.x_features,
@@ -207,7 +211,7 @@ def evaluate_selected_models(
         y_features=bundle.y_features,
     )
     bundle.attach_prior(prior)
-    return evaluate_models(bundle, models, Path(bundle_path) / "evaluation", round_id=round_id)
+    return evaluate_models(bundle, models, Path(bundle_path) / "evaluation", round_id=round_id, n_trials=n_trials)
 
 
 def contribute_selected_models(
@@ -373,7 +377,7 @@ def write_prior_injected_model(
     bundle = ModelingBundle.load(Path(bundle_path))
     wanted = [part.strip() for part in prior_sources.split(",") if part.strip()] or None
     data = load_biomaster(Path(source))
-    rel = "protein_to_pathway" if bundle.x_modality == "proteomics" else "metabolite_to_pathway"
+    rel = bundle.prior_relationship()
     prior = PriorRegistry().build(
         data,
         bundle.x_features,

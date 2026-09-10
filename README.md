@@ -46,27 +46,25 @@ python -m src.models.smoke --unit liver --direction proteomics_to_metabolomics
 
 `ModelRegistry().list()` / `build(name)`：
 
-无先验：`train_mean`, `last_value`, `ridge`, `pls`, `mlp`, `neural_ode`, `feature_chunk_lstm`
+非 ML 对照只保留 `train_mean`, `last_value`, `ridge`。学习模型用完整库：`pls`, `mlp`, `neural_ode`, `feature_chunk_lstm`, `pathway_ridge`, `random_group_ridge`, `laplacian_ridge`, `graph_omics_ode`, `prior_fusion_ridge`, `prior_fusion_mlp`。流水线默认 **两个方向都跑**。
 
-需 `bundle.prior`：`pathway_ridge`, `random_group_ridge`, `laplacian_ridge`, `graph_omics_ode`, `prior_fusion_ridge`, `prior_fusion_mlp`
-
-coding 节点还会在 `src/models/generated/` 注册一个先验注入新模型。写模型时 LLM 可以调用 `list_python_packages` / `install_python_packages` / `run_repo_terminal`（仅 python/pip）查看当前环境并安装额外依赖；生成代码仍禁止 `os`/`subprocess`。
+coding 节点写一个**先验注入动力学 ODE**（与 `graph_omics_ode` 同类：图/embedding 向量场 + 对 last_interval Δt 积分）。写模型时 LLM 可以调用环境工具装依赖；生成代码仍禁止 `os`/`subprocess`。
 
 `last_value` 使用配对表里的 `persist_y_sample_id`（X 时刻、同一轨迹的 Y），不再在模型里特判真/伪。
 
 ## LangGraph 流水线
 
-`inspect → plan(LLM) → curate → prior → propose → evaluate → (rewrite ≤1) → contribution → report`
+`inspect → plan(LLM) → curate → prior → propose → evaluate → (rewrite ≤3) → contribution → report`
 
 ```text
 inspect      读 BioMaster 模板，判断真/伪滞后，列出可用先验
 plan         大模型选 unit / 方向 / prior_sources（STRING / KEGG / 预训练槽）
 curate       last_interval 配对 + 训练折内预处理
 prior        把先验物化成模型 extra-input（Laplacian、通路分、embedding、pair prior）
-propose      参照模型库写一个先验注入新模型（无 key 则写 prior_gated_ridge）
-evaluate     GPU 训练 + 小网格调参 + PCC/Spearman/RMSE；LLM 最多再改一次结构
-contribution 跨模态 contribution（系数 / 遮挡 / 梯度 / permutation / 可选 SHAP）交给 BioMaster
-report       大模型写简短实验笔记
+propose      写一个先验注入动力学 ODE（无 key 则失败，不再回退 ridge）
+evaluate     训练段（train+val）按 subject/轨迹做 5 折 CV 选超参，最后一段 interval 做测试；LLM 最多再改三次结构
+contribution 写出各方法归因分数表（不做科学置信度/新颖性综合分）；并写 interpretation.md
+report       每个方向一份实验笔记
 ```
 
 ```bash
@@ -85,10 +83,10 @@ python -m src.api.run --source /personal/data/biomaster-processed/ipop_exercise
 python -m src.interpretation.run \
   --source /personal/data/biomaster-processed/ipop_exercise \
   --bundle artifacts/ipop_exercise/last_interval/all/proteomics_to_metabolomics \
-  --models ridge,pls
+  --models ridge,mlp
 ```
 
-对每个蛋白–代谢对计算：系数幅度（线性模型）、输入遮挡、有限差分梯度、bootstrap 稳定性、扰动稳健性、先验支持。`train_mean` / `last_value` 会跳过。
+对每个蛋白–代谢对写出 coefficient / occlusion / gradient / permutation / 线性 SHAP 分数表，交给 BioMaster 做后续综合。`train_mean` / `last_value` 会跳过。
 
 ## 先验库
 
@@ -96,4 +94,4 @@ python -m src.interpretation.run \
 
 - `name_rule`：基因名 / 代谢物名模块（无网也能用）
 - `kegg_reactome`：KEGG/Reactome 缓存 + UniProt/HMDB
-- `pretrained`：接口位；代谢物在有 SMILES 且安装 rdkit 时做 Morgan fingerprint，不下载 ESM/ChemBERTa
+- `pretrained`：蛋白走 ESM-2 35M（UniProt 序列）；代谢物走 PubChem SMILES → 本地 Uni-Mol2 84M，失败则 Morgan / 哈希名

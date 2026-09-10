@@ -13,9 +13,9 @@ from src.curator.preprocess import FoldPreprocessor
 from src.curator.tasks.registry import register_task
 
 DIRECTIONS = (
-    ("proteomics_to_metabolomics", "proteomics", "metabolomics"),
-    ("metabolomics_to_proteomics", "metabolomics", "proteomics"),
+    ("multimodal", "proteomics+metabolomics", "proteomics+metabolomics"),
 )
+JOINT_DIRECTION = "multimodal"
 
 
 def detect_lag_mode(metadata: pd.DataFrame) -> str:
@@ -89,8 +89,6 @@ def build_pairs(metadata: pd.DataFrame, mode: str) -> tuple[pd.DataFrame, dict[s
         )
 
     for tid, samples in by_traj.items():
-        for time in train_times:
-            add_pair(tid, time, time, "contemporaneous_train", "train")
         for x_time, y_time in train_intervals:
             add_pair(tid, x_time, y_time, "aligned_lag_train", "train")
         add_pair(tid, val_interval[0], val_interval[1], "aligned_lag_val", "val")
@@ -112,7 +110,9 @@ def build_pairs(metadata: pd.DataFrame, mode: str) -> tuple[pd.DataFrame, dict[s
         "note": (
             "True lag uses subject_id trajectories. "
             "Pseudo lag uses tissue|sex|replicate. "
-            "Y at t_last never enters preprocessor fitting."
+            "Y at t_last never enters preprocessor fitting. "
+            "Both omics are inputs and both are predicted at the next time. "
+            "Evaluator tunes on grouped fold-1 only (no 5-fold CV)."
         ),
     }
     return pairs, protocol
@@ -153,6 +153,26 @@ def _split_arrays(
     return SplitArrays(X=np.hstack([x, ctx]), Y=y, pairs=pairs.reset_index(drop=True))
 
 
+def _split_joint(
+    protein: pd.DataFrame,
+    metabolite: pd.DataFrame,
+    pairs: pd.DataFrame,
+    scale: float,
+    pooled: bool,
+    tissues: list[str],
+) -> SplitArrays:
+    xp = protein.loc[pairs["x_sample_id"].tolist()].to_numpy(dtype=float)
+    xm = metabolite.loc[pairs["x_sample_id"].tolist()].to_numpy(dtype=float)
+    yp = protein.loc[pairs["y_sample_id"].tolist()].to_numpy(dtype=float)
+    ym = metabolite.loc[pairs["y_sample_id"].tolist()].to_numpy(dtype=float)
+    ctx, _names = _context(pairs, scale, pooled, tissues)
+    return SplitArrays(
+        X=np.hstack([xp, xm, ctx]),
+        Y=np.hstack([yp, ym]),
+        pairs=pairs.reset_index(drop=True),
+    )
+
+
 @register_task("last_interval")
 def curate_last_interval(
     data: BioMasterDataset,
@@ -175,9 +195,13 @@ def curate_last_interval(
     scale = _clock_scale(times, clock_scale)
     pooled = unit == "pooled"
     tissues = data.tissues if pooled else []
-    wanted = {item[0] for item in DIRECTIONS}
+    wanted = {JOINT_DIRECTION}
     if directions:
-        wanted = set(directions)
+        raw = {str(item) for item in directions if str(item)}
+        if raw & {"both", "all", JOINT_DIRECTION, "proteomics_to_metabolomics", "metabolomics_to_proteomics"}:
+            wanted = {JOINT_DIRECTION}
+        else:
+            wanted = raw
 
     protein_pp = FoldPreprocessor(
         already_logged=data.already_logged,
@@ -193,48 +217,58 @@ def curate_last_interval(
     metabolite_t = metabolite_pp.transform(data.metabolomics.loc[unit_meta["sample_id"]], unit_meta)
 
     bundles: list[ModelingBundle] = []
-    for direction, x_name, y_name in DIRECTIONS:
-        if direction not in wanted:
-            continue
-        x_mat = protein_t if x_name == "proteomics" else metabolite_t
-        y_mat = metabolite_t if y_name == "metabolomics" else protein_t
-        ctx_demo, context_names = _context(pairs.head(1), scale, pooled, tissues)
-        del ctx_demo
-        train_p = pairs.loc[pairs["split"] == "train"].reset_index(drop=True)
-        val_p = pairs.loc[pairs["split"] == "val"].reset_index(drop=True)
-        test_p = pairs.loc[pairs["split"] == "test"].reset_index(drop=True)
-        train = _split_arrays(x_mat, y_mat, train_p, scale, pooled, tissues)
-        val = _split_arrays(x_mat, y_mat, val_p, scale, pooled, tissues)
-        test = _split_arrays(x_mat, y_mat, test_p, scale, pooled, tissues)
-        y_lookup = y_mat.copy()
-        y_lookup.index.name = "sample_id"
-        bundles.append(
-            ModelingBundle(
-                dataset=data.name,
-                task="last_interval",
-                unit=unit,
-                direction=direction,
-                lag_mode=mode,
-                x_modality=x_name,
-                y_modality=y_name,
-                x_features=list(x_mat.columns),
-                y_features=list(y_mat.columns),
-                context_names=context_names,
-                n_expr=int(x_mat.shape[1]),
-                train=train,
-                val=val,
-                test=test,
-                pairs=pairs.copy(),
-                y_lookup=y_lookup,
-                metadata=unit_meta,
-                protocol=protocol,
-                preprocess_params={
-                    "proteomics": protein_pp.to_params(),
-                    "metabolomics": metabolite_pp.to_params(),
-                    "clock_scale": scale,
-                    "train_sample_ids": train_ids,
-                },
-                warnings=list(data.warnings),
-            )
+    if JOINT_DIRECTION not in wanted:
+        return bundles
+    _ctx_demo, context_names = _context(pairs.head(1), scale, pooled, tissues)
+    del _ctx_demo
+    train_p = pairs.loc[pairs["split"] == "train"].reset_index(drop=True)
+    val_p = pairs.loc[pairs["split"] == "val"].reset_index(drop=True)
+    test_p = pairs.loc[pairs["split"] == "test"].reset_index(drop=True)
+    train = _split_joint(protein_t, metabolite_t, train_p, scale, pooled, tissues)
+    val = _split_joint(protein_t, metabolite_t, val_p, scale, pooled, tissues)
+    test = _split_joint(protein_t, metabolite_t, test_p, scale, pooled, tissues)
+    y_lookup = pd.concat([protein_t, metabolite_t], axis=1)
+    y_lookup.index.name = "sample_id"
+    x_features = list(protein_t.columns) + list(metabolite_t.columns)
+    y_features = list(x_features)
+    n_protein = int(protein_t.shape[1])
+    n_metabolite = int(metabolite_t.shape[1])
+    protocol = {
+        **protocol,
+        "x_layout": "proteins_then_metabolites_then_context",
+        "y_layout": "proteins_then_metabolites",
+        "n_protein": n_protein,
+        "n_metabolite": n_metabolite,
+    }
+    bundles.append(
+        ModelingBundle(
+            dataset=data.name,
+            task="last_interval",
+            unit=unit,
+            direction=JOINT_DIRECTION,
+            lag_mode=mode,
+            x_modality="proteomics+metabolomics",
+            y_modality="proteomics+metabolomics",
+            x_features=x_features,
+            y_features=y_features,
+            context_names=context_names,
+            n_expr=n_protein + n_metabolite,
+            n_protein=n_protein,
+            n_metabolite=n_metabolite,
+            train=train,
+            val=val,
+            test=test,
+            pairs=pairs.copy(),
+            y_lookup=y_lookup,
+            metadata=unit_meta,
+            protocol=protocol,
+            preprocess_params={
+                "proteomics": protein_pp.to_params(),
+                "metabolomics": metabolite_pp.to_params(),
+                "clock_scale": scale,
+                "train_sample_ids": train_ids,
+            },
+            warnings=list(data.warnings),
         )
+    )
     return bundles

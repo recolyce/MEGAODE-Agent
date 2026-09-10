@@ -32,6 +32,31 @@ def unimol_dir() -> Path:
     return prior_root() / "unimol"
 
 
+def unimol_weights_dir() -> Path:
+    dest = prior_root() / "unimol_weights"
+    dest.mkdir(parents=True, exist_ok=True)
+    return dest
+
+
+def ensure_unimol2_84m_weight() -> Path:
+    """Place Uni-Mol2 84M where unimol_tools looks: {UNIMOL_WEIGHT_DIR}/modelzoo/84M/checkpoint.pt."""
+    dest = unimol_weights_dir() / "modelzoo" / "84M" / "checkpoint.pt"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists() and dest.stat().st_size > 0:
+        return dest
+    candidates = [
+        unimol_dir() / "unimol2" / "checkpoints" / "84M" / "checkpoint.pt",
+        Path("/root/workspace/Uni-Mol/unimol2/checkpoints/84M/checkpoint.pt"),
+    ]
+    for src in candidates:
+        if src.exists() and src.stat().st_size > 0:
+            if dest.is_symlink() or dest.exists():
+                dest.unlink()
+            dest.symlink_to(src.resolve())
+            return dest
+    return dest
+
+
 def sequence_dir() -> Path:
     return prior_root() / "sequences" / "uniprot"
 

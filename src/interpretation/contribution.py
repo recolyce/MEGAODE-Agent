@@ -11,6 +11,7 @@ import pandas as pd
 
 from src.curator.bundle import ModelingBundle
 from src.curator.loader import load_biomaster
+from src.eval.evaluator import apply_development_train
 from src.interpretation.attribution import (
     SKIP_MODELS,
     _display_maps,
@@ -20,9 +21,9 @@ from src.interpretation.attribution import (
     _predict_x,
     _prior_pairs,
     _row_normalize,
-    attribute_models,
 )
 from src.models.registry import ModelRegistry
+from src.interpretation.explain import write_interpretation_markdown
 from src.prior.registry import PriorRegistry
 
 
@@ -78,7 +79,7 @@ def _try_shap(model: Any, bundle: ModelingBundle, seed: int) -> np.ndarray | Non
 
 def _attach_prior(source: str, bundle: ModelingBundle, artifacts: str, prior_backend: str, organism: str, sources: list[str] | None):
     data = load_biomaster(Path(source))
-    rel = "protein_to_pathway" if bundle.x_modality == "proteomics" else "metabolite_to_pathway"
+    rel = bundle.prior_relationship()
     prior = PriorRegistry().build(
         data,
         bundle.x_features,
@@ -104,6 +105,7 @@ def compute_contributions(
     seed: int = 42,
 ) -> dict[str, Any]:
     bundle = ModelingBundle.load(Path(bundle_path))
+    apply_development_train(bundle)
     data, prior = _attach_prior(source, bundle, artifacts, prior_backend, organism, prior_sources)
     protein_name, met_name = _display_maps(data.protein_annotations, data.metabolite_annotations)
     prior_scores = _prior_pairs(prior.network)
@@ -135,10 +137,13 @@ def compute_contributions(
         if shap_mag is not None:
             maps["shap"] = shap_mag
             shap_ok = True
+        n_p = int(getattr(bundle, "n_protein", bundle.n_expr) or bundle.n_expr)
         for j, target in enumerate(bundle.y_features):
+            tgt_mod = "proteomics" if j < n_p else "metabolomics"
+            tgt_name = protein_name.get(target, target) if tgt_mod == "proteomics" else met_name.get(target, target)
             for i, src in enumerate(bundle.x_features):
-                src_name = protein_name.get(src, src) if bundle.x_modality == "proteomics" else met_name.get(src, src)
-                tgt_name = met_name.get(target, target) if bundle.y_modality == "metabolomics" else protein_name.get(target, target)
+                src_mod = "proteomics" if i < n_p else "metabolomics"
+                src_name = protein_name.get(src, src) if src_mod == "proteomics" else met_name.get(src, src)
                 p = float(prior_scores.get((src, target), 0.0))
                 for method, mat in maps.items():
                     if mat is None:
@@ -150,8 +155,8 @@ def compute_contributions(
                             "target_feature": target,
                             "source_name": src_name,
                             "target_name": tgt_name,
-                            "source_modality": bundle.x_modality,
-                            "target_modality": bundle.y_modality,
+                            "source_modality": src_mod,
+                            "target_modality": tgt_mod,
                             "method": method,
                             "score": float(mat[j, i]),
                             "prior": p,
@@ -161,17 +166,24 @@ def compute_contributions(
         methods_used.append("shap")
     table = pd.DataFrame.from_records(records)
     table.to_csv(dest / "contribution_pairs.csv", index=False)
-    attr = {}
-    if names:
-        attr = attribute_models(
-            source,
-            bundle_path,
-            names,
-            artifacts=artifacts,
-            prior_backend=prior_backend,
-            organism=organism,
-            prior_sources=prior_sources,
-        )
+    wide_path = dest / "method_scores.csv"
+    if len(table) and "method" in table.columns:
+        index_cols = [
+            "model",
+            "source_feature",
+            "target_feature",
+            "source_name",
+            "target_name",
+            "source_modality",
+            "target_modality",
+            "prior",
+        ]
+        wide = table.pivot_table(index=index_cols, columns="method", values="score", aggfunc="first").reset_index()
+        wide.columns.name = None
+        wide.to_csv(wide_path, index=False)
+        for name in names:
+            sub = wide.loc[wide["model"] == name] if "model" in wide.columns else wide
+            sub.to_csv(dest / f"{name}_method_scores.csv", index=False)
     top = []
     if len(table) and "method" in table.columns and "score" in table.columns:
         ranked = table.loc[table["method"] == "permutation"]
@@ -191,15 +203,21 @@ def compute_contributions(
         "methods": methods_used,
         "n_rows": int(len(table)),
         "contribution_csv": str(dest / "contribution_pairs.csv"),
-        "attribution_dir": str(Path(bundle_path) / "attribution"),
+        "method_scores_csv": str(wide_path),
         "schema": {
             "grain": "one row = model × source feature × target feature × method",
-            "score": "row-normalized magnitude within each target",
+            "score": "row-normalized magnitude within each target; BioMaster aggregates later",
             "intended_consumer": "BioMaster",
         },
         "top_permutation": top,
-        "attribution": {k: attr.get(k) for k in ("n_pairs", "class_counts", "n_known_A", "n_novel_C", "path")},
     }
     (dest / "biomaster_handoff.json").write_text(json.dumps(handoff, indent=2, default=str) + "\n", encoding="utf-8")
     (dest / "summary.json").write_text(json.dumps(handoff, indent=2, default=str) + "\n", encoding="utf-8")
+    handoff["interpretation_md"] = write_interpretation_markdown(
+        bundle_path,
+        contribution=handoff,
+        metrics=None,
+        selected="",
+        prior=None,
+    )
     return handoff

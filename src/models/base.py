@@ -40,3 +40,20 @@ def split_context(x: np.ndarray, n_expr: int) -> tuple[np.ndarray, np.ndarray]:
     if x.shape[1] < n_expr:
         raise ValueError("X has fewer columns than expression features")
     return x[:, :n_expr], x[:, n_expr:]
+
+
+def split_modalities(x: np.ndarray, n_protein: int, n_metabolite: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Split [proteins | metabolites | context] columns."""
+    x = np.asarray(x, dtype=float)
+    n_p = max(int(n_protein), 0)
+    n_m = max(int(n_metabolite), 0)
+    n_expr = n_p + n_m
+    if x.shape[1] < n_expr:
+        raise ValueError("X has fewer columns than protein+metabolite features")
+    return x[:, :n_p], x[:, n_p:n_expr], x[:, n_expr:]
+
+
+def split_y_modalities(y: np.ndarray, n_protein: int, n_metabolite: int) -> tuple[np.ndarray, np.ndarray]:
+    y = np.asarray(y, dtype=float)
+    n_p = max(int(n_protein), 0)
+    return y[:, :n_p], y[:, n_p : n_p + max(int(n_metabolite), 0)]

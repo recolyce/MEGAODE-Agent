@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from src.api.graph import run_pipeline
+from src.models.registry import DEFAULT_MODELS
 
 
 def main() -> None:
@@ -14,8 +15,9 @@ def main() -> None:
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--artifacts", type=Path, default=Path("artifacts"))
     parser.add_argument("--unit", default="")
-    parser.add_argument("--direction", default="")
-    parser.add_argument("--models", default="train_mean,last_value,ridge,pls,laplacian_ridge,prior_fusion_ridge")
+    parser.add_argument("--direction", default="multimodal", help="multimodal joint forecast (both omics in and out)")
+    parser.add_argument("--models", default="")
+    parser.add_argument("--n-trials", type=int, default=15, help="Optuna trials per model on fold 1")
     parser.add_argument("--prior", default="auto")
     parser.add_argument("--prior-sources", default="", help="comma list: name_rule,kegg_reactome,string,pretrained")
     parser.add_argument("--organism", default="")
@@ -27,7 +29,8 @@ def main() -> None:
         "source": str(args.source),
         "artifacts": str(args.artifacts),
         "task": "last_interval",
-        "models": [name.strip() for name in args.models.split(",") if name.strip()],
+        "models": [name.strip() for name in (args.models or ",".join(DEFAULT_MODELS)).split(",") if name.strip()],
+        "n_trials": int(args.n_trials),
         "prior_backend": args.prior,
         "n_hv": args.n_hv,
         "run_attribution": not args.no_attribution,
@@ -37,8 +40,7 @@ def main() -> None:
         state["prior_sources"] = [part.strip() for part in args.prior_sources.split(",") if part.strip()]
     if args.unit:
         state["unit"] = args.unit
-    if args.direction:
-        state["direction"] = args.direction
+    state["direction"] = "multimodal"
     if args.organism:
         state["organism"] = args.organism
     final = run_pipeline(state)

@@ -254,31 +254,10 @@ def _rows_for_model(
     n_y = len(bundle.y_features)
     n_expr = bundle.n_expr
     attr = maps["A"]
-    rank_mat = np.empty_like(attr, dtype=int)
-    for j in range(n_y):
-        order = np.argsort(-attr[j], kind="mergesort")
-        rank_mat[j, order] = np.arange(1, n_expr + 1)
-    temporal = 1.0 if bundle.task == "last_interval" else 0.0
     records = []
     for j, target in enumerate(bundle.y_features):
         for i, source in enumerate(bundle.x_features):
-            rank = int(rank_mat[j, i])
             p = float(prior_scores.get((source, target), 0.0))
-            if rank > TOP_PER_TARGET and p == 0.0:
-                continue
-            a = float(attr[j, i])
-            s = float(maps["S"][j, i])
-            d = float(maps["D"][j, i])
-            r = float(maps["R"][j, i])
-            sc = (
-                W_SC["A"] * a
-                + W_SC["S"] * s
-                + W_SC["D"] * d
-                + W_SC["R"] * r
-                + W_SC["T"] * temporal
-                + W_SC["P"] * p
-            )
-            data_ev = W_DE["A"] * a + W_DE["S"] * s + W_DE["D"] * d + W_DE["R"] * r + W_DE["T"] * temporal
             src_mod, tgt_mod = bundle.x_modality, bundle.y_modality
             records.append(
                 {
@@ -290,23 +269,11 @@ def _rows_for_model(
                     "target_modality": tgt_mod,
                     "source_name": protein_name.get(source, source) if src_mod == "proteomics" else met_name.get(source, source),
                     "target_name": met_name.get(target, target) if tgt_mod == "metabolomics" else protein_name.get(target, target),
-                    "rank_within_target": rank,
-                    "AttributionMagnitude": a,
-                    "OcclusionImportance": float(maps["occlusion"][j, i]),
-                    "GradientMagnitude": float(maps["gradient"][j, i]),
-                    "Stability": s,
-                    "DirectionalConsistency": d,
-                    "PerturbationRobustness": r,
-                    "TemporalPlausibility": temporal,
-                    "PriorKnowledgeScore": p,
-                    "LiteratureEvidenceScore": 0.0,
-                    "ScientificConfidence": sc,
-                    "Novelty": (1.0 - p),
-                    "DataEvidence": data_ev,
-                    "DiscoveryPriority": data_ev * (0.5 + 0.5 * (1.0 - p)),
-                    "classification": _classify(rank, s, d, r, p),
+                    "coefficient": float(attr[j, i]),
+                    "occlusion": float(maps["occlusion"][j, i]),
+                    "gradient": float(maps["gradient"][j, i]),
+                    "prior": p,
                     "methods": ",".join(methods),
-                    "note": "T=1 for last_interval; L=0 in this step; A uses rank within target",
                 }
             )
     return pd.DataFrame.from_records(records)
@@ -324,7 +291,7 @@ def attribute_models(
 ) -> dict[str, Any]:
     bundle = ModelingBundle.load(Path(bundle_path))
     data = load_biomaster(Path(source))
-    rel = "protein_to_pathway" if bundle.x_modality == "proteomics" else "metabolite_to_pathway"
+    rel = bundle.prior_relationship()
     prior = PriorRegistry().build(
         data,
         bundle.x_features,
@@ -363,41 +330,14 @@ def attribute_models(
     if not frames:
         return {"n_pairs": 0, "models": [], "skipped": skipped, "path": str(dest)}
     combined = pd.concat(frames, ignore_index=True)
-    if len(used) >= 2:
-        keys = ["source_feature", "target_feature"]
-        agree = (
-            combined.loc[combined["rank_within_target"] <= 10]
-            .groupby(keys)["model"]
-            .nunique()
-            .rename("n_models_top10")
-            .reset_index()
-        )
-        combined = combined.merge(agree, on=keys, how="left")
-        combined["CrossModelAgreement"] = combined["n_models_top10"].fillna(0) / float(len(used))
-    else:
-        combined["CrossModelAgreement"] = 1.0
-    combined.to_csv(dest / "pair_scores.csv", index=False)
-    known = combined.loc[combined["classification"] == "A"].sort_values(
-        ["ScientificConfidence", "PriorKnowledgeScore"], ascending=False
-    )
-    novel = combined.loc[combined["classification"] == "C"].sort_values(
-        ["DiscoveryPriority", "DataEvidence"], ascending=False
-    )
-    known.to_csv(dest / "high_confidence_known_pairs.csv", index=False)
-    novel.head(200).to_csv(dest / "novel_candidate_pairs.csv", index=False)
-    counts = combined["classification"].value_counts().to_dict()
+    combined.to_csv(dest / "method_scores.csv", index=False)
     summary = {
         "models": used,
         "skipped": skipped,
         "n_pairs": int(len(combined)),
-        "class_counts": {str(k): int(v) for k, v in counts.items()},
-        "n_known_A": int(len(known)),
-        "n_novel_C": int(len(novel)),
-        "methods": ["coefficient", "occlusion", "finite_difference", "bootstrap_stability", "perturbation", "prior"],
+        "methods": ["coefficient", "occlusion", "gradient"],
         "path": str(dest),
-        "top_pairs": combined.sort_values("ScientificConfidence", ascending=False)
-        .head(8)[["model", "source_name", "target_name", "rank_within_target", "ScientificConfidence", "classification"]]
-        .to_dict("records"),
+        "note": "Raw attribution scores only. BioMaster computes confidence / novelty later.",
     }
     (dest / "summary.json").write_text(json.dumps(summary, indent=2, default=str) + "\n", encoding="utf-8")
     return summary

@@ -77,7 +77,7 @@ def annotation_prior_hints(data: BioMasterDataset) -> dict[str, Any]:
         "notes": [
             f"Knowledge root: {prior_root()}",
             "STRING/STITCH read TMO_PRIOR_ROOT (official files or proxy).",
-            "pretrained: ESM-2 35M when UniProt sequences resolve; SMILES via PubChem then Uni-Mol/Morgan.",
+            "pretrained: ESM-2 35M when UniProt sequences resolve; SMILES via PubChem then Uni-Mol2 84M (Morgan fallback).",
         ],
     }
 
@@ -130,9 +130,19 @@ class PriorRegistry:
                 frames.append(kegg_net)
                 provenances.append(kegg_prov)
 
+        protein_ids = set()
+        if "feature_id" in data.protein_annotations.columns:
+            protein_ids = set(data.protein_annotations["feature_id"].astype(str))
+        else:
+            protein_ids = set(map(str, data.proteomics.columns))
+        protein_only = [name for name in features if name in protein_ids]
+
         if "string" in wanted:
             string_net, extra_adj, string_prov, string_warn = build_string_network(
-                data.protein_annotations, features, cache=string_dir(), organism=organism
+                data.protein_annotations,
+                protein_only or features,
+                cache=string_dir(),
+                organism=organism,
             )
             warnings.extend(string_warn)
             if not string_net.empty:
@@ -163,7 +173,14 @@ class PriorRegistry:
         if not network.empty:
             network = network.drop_duplicates(["source_node", "target_node", "relationship"])
         provenance = pd.concat(provenances, ignore_index=True) if provenances else pd.DataFrame()
-        membership = membership_sets(network, features, relationship) if len(network) else {}
+        if relationship in {"joint", "multimodal", "both"}:
+            membership = {}
+            for rel in ("protein_to_pathway", "metabolite_to_pathway"):
+                part = membership_sets(network, features, rel) if len(network) else {}
+                for key, values in part.items():
+                    membership[key] = sorted(set(membership.get(key, []) + values))
+        else:
+            membership = membership_sets(network, features, relationship) if len(network) else {}
         pretrained = build_pretrained(
             data.protein_annotations,
             data.metabolite_annotations,

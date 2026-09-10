@@ -104,9 +104,16 @@ def materialize_features(
         n = len(features)
         adjacency = np.zeros((n + n_context, n + n_context), dtype=float)
         adjacency[:n, :n] = np.diag(np.diag(laplacian[:n, :n])) - laplacian[:n, :n]
-        if extra_adjacency is not None and extra_adjacency.shape[0] == n:
-            adjacency[:n, :n] = np.maximum(adjacency[:n, :n], extra_adjacency)
-            lap_extra = np.diag(extra_adjacency.sum(axis=1)) - extra_adjacency
+        extra = extra_adjacency
+        if extra is not None and extra.shape[0] != n:
+            padded = np.zeros((n, n), dtype=float)
+            k = min(int(extra.shape[0]), n)
+            padded[:k, :k] = extra[:k, :k]
+            extra = padded
+            notes.append("STRING adjacency padded onto the protein block of joint nodes")
+        if extra is not None and extra.shape[0] == n:
+            adjacency[:n, :n] = np.maximum(adjacency[:n, :n], extra)
+            lap_extra = np.diag(extra.sum(axis=1)) - extra
             laplacian[:n, :n] = laplacian[:n, :n] + lap_extra
             notes.append("STRING/proxy adjacency added to Laplacian")
     group_index, group_names = _group_index(features, membership)

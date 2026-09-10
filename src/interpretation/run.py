@@ -6,11 +6,11 @@ import argparse
 import json
 from pathlib import Path
 
-from src.interpretation.attribution import attribute_models
+from src.interpretation.contribution import compute_contributions
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Pair-level multi-method attribution")
+    parser = argparse.ArgumentParser(description="Write BioMaster attribution score tables")
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--bundle", type=Path, required=True)
     parser.add_argument("--models", default="ridge")
@@ -19,7 +19,7 @@ def main() -> None:
     parser.add_argument("--organism", default="human")
     args = parser.parse_args()
     names = [part.strip() for part in args.models.split(",") if part.strip()]
-    summary = attribute_models(
+    summary = compute_contributions(
         str(args.source),
         str(args.bundle),
         names,

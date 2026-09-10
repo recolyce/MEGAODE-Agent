@@ -122,13 +122,18 @@ def propose_model(
     payload = {
         "catalog": _catalog_text(),
         "n_expr": bundle.n_expr,
+        "n_protein": getattr(bundle, "n_protein", bundle.n_expr),
+        "n_metabolite": getattr(bundle, "n_metabolite", 0),
         "n_y": len(bundle.y_features),
         "n_train": int(len(bundle.train.pairs)),
         "lag_mode": bundle.lag_mode,
         "direction": bundle.direction,
+        "x_modality": bundle.x_modality,
+        "y_modality": bundle.y_modality,
         "prior": prior_summary,
         "inspection_priors": (inspection or {}).get("prior_hints"),
-        "instruction": instruction or "Inspect installed packages, install extras if useful, write and smoke a new prior-injected model.",
+        "instruction": instruction
+        or "Write and smoke one prior-injected dynamical ODE (graph/embedding vector field + RK over last_interval dt). Do not write another ridge.",
         "do_not_reuse": list(existing or []) + sorted(BLOCKED_NAMES),
     }
     messages: list[dict[str, str]] = [
