@@ -328,13 +328,10 @@ def contribution_node(state: PipelineState) -> dict[str, Any]:
     path = _bundle_path(state)
     if not path:
         return {"errors": _errors(state) + ["contribution skipped: no bundle"]}
-    selected = state.get("selected_model") or "mlp"
-    names = []
-    for name in (selected, ((state.get("generated") or {}).get("model"))):
-        if name and name not in names:
-            names.append(str(name))
-    if not names:
-        return {"contribution": {"skipped": True, "reason": "no attributable models"}}
+    selected = str(state.get("selected_model") or "").strip()
+    if not selected:
+        return {"contribution": {"skipped": True, "reason": "no selected model"}}
+    names = [selected]
     summary = compute_contributions(
         state["source"],
         path,

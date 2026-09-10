@@ -1,7 +1,8 @@
-"""Write a BioMaster-facing markdown note: attribution tables and how they were computed."""
+"""Write a short BioMaster note for the selected model only."""
 
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 from typing import Any
@@ -14,24 +15,40 @@ def _fmt_pcc(value: object) -> str:
         return "NA"
 
 
-def _rows_md(rows: list[dict[str, Any]], columns: list[tuple[str, str]], limit: int = 8) -> str:
-    if not rows:
-        return "_（本次没有可用行）_\n"
-    header = "| " + " | ".join(title for _key, title in columns) + " |"
-    sep = "| " + " | ".join("---" for _ in columns) + " |"
-    lines = [header, sep]
-    for row in rows[:limit]:
-        cells = []
-        for key, _title in columns:
-            val = row.get(key, "")
-            if key == "score":
-                try:
-                    val = f"{float(val):.4f}"
-                except (TypeError, ValueError):
-                    val = str(val)
-            cells.append(str(val))
-        lines.append("| " + " | ".join(cells) + " |")
-    return "\n".join(lines) + "\n"
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def model_script_path(name: str) -> str:
+    if not name:
+        return ""
+    try:
+        from src.models.registry import ModelRegistry
+
+        model = ModelRegistry().build(name)
+        path = Path(inspect.getfile(model.__class__)).resolve()
+        try:
+            return str(path.relative_to(_repo_root()))
+        except ValueError:
+            return str(path)
+    except Exception:
+        generated = _repo_root() / "src" / "models" / "generated" / f"{name}.py"
+        library = _repo_root() / "src" / "models"
+        if generated.exists():
+            return str(generated.relative_to(_repo_root()))
+        for cand in library.glob("*.py"):
+            if name.replace("-", "_") in cand.read_text(encoding="utf-8"):
+                return str(cand.relative_to(_repo_root()))
+        return ""
+
+
+def _selected_row(metrics: list[dict[str, Any]] | None, chosen: str) -> dict[str, Any]:
+    for row in metrics or []:
+        if row.get("error"):
+            continue
+        if str(row.get("model") or "") == chosen:
+            return row
+    return {}
 
 
 def write_interpretation_markdown(
@@ -51,88 +68,46 @@ def write_interpretation_markdown(
     if not metrics and (root / "evaluation" / "evaluation.json").exists():
         metrics = json.loads((root / "evaluation" / "evaluation.json").read_text(encoding="utf-8")).get("rows") or []
 
-    metric_lines = ["| 模型 | 角色 | 验证中位 PCC | 测试中位 PCC |", "| --- | --- | --- | --- |"]
-    for row in metrics or []:
-        if row.get("error"):
-            continue
-        name = str(row.get("model") or "")
-        role = "学习模型"
-        metric_lines.append(
-            f"| {name} | {role} | {_fmt_pcc(row.get('val_median_pcc'))} | {_fmt_pcc(row.get('test_median_pcc'))} |"
+    chosen = str(selected or (contrib.get("models") or [""])[0] or "")
+    row = _selected_row(metrics, chosen)
+    script = model_script_path(chosen)
+    used = [m for m in (contrib.get("methods") or []) if m in {"occlusion", "gradient", "permutation", "shap", "coefficient"}]
+    if (root / "contribution" / "contribution_pairs.csv").exists():
+        try:
+            import pandas as pd
+
+            used = sorted(set(pd.read_csv(root / "contribution" / "contribution_pairs.csv", usecols=["method"])["method"].astype(str)))
+        except Exception:
+            used = [m for m in (contrib.get("methods") or []) if m != "coefficient"]
+    pretrained = ((prior or {}).get("pretrained") or {})
+    prior_line = ""
+    if prior:
+        prior_line = (
+            f"先验：{(prior or {}).get('n_edges', '')} 条边，"
+            f"来源 {','.join((prior or {}).get('sources') or [])}，"
+            f"嵌入 `{pretrained.get('method') or ''}`。\n"
         )
 
-    pretrained = (prior or {}).get("pretrained") or {}
-    text = f"""# 跨模态归因表说明（给 BioMaster）
+    text = f"""# 给 BioMaster 的交接说明
 
-这份文件只说明**归因分数表**在哪里、怎么算。任务是多模态下一时刻预测。科学置信度、新颖性、最终每一对综合评分由 **BioMaster 后续分析**，本仓库不写这些列。
+只解释**最终选定模型** `{chosen}`。请不要分析库里其他模型。置信度、新颖性和最终对排序由 BioMaster 完成。
 
-- 数据集：`{contrib.get("dataset") or (root.parts[-4] if len(root.parts) >= 4 else root)}`
-- 任务：`{contrib.get("task") or "last_interval"}` / unit=`{contrib.get("unit") or ""}` / `{contrib.get("direction") or ""}`
-- 滞后：`{contrib.get("lag_mode") or ""}`（true = 同一 `subject_id` 的最后一段 interval）
-- 选中模型：`{selected or ""}`
-- 写过归因表的模型：{", ".join(str(m) for m in (contrib.get("models") or []))}
+任务：同一时刻蛋白质 + 代谢物 → 下一时刻两个组学（`last_interval` / `{contrib.get("direction") or "multimodal"}` / 真滞后）。
 
-## BioMaster 应读哪些文件
+- 模型名：`{chosen}`
+- 架构脚本：`{script or "（未找到）"}`
+- fold1 验证中位 PCC：`{_fmt_pcc(row.get("val_median_pcc"))}`
+- 测试中位 PCC：`{_fmt_pcc(row.get("test_median_pcc"))}`（蛋白 `{_fmt_pcc(row.get("test_protein_median_pcc"))}`，代谢 `{_fmt_pcc(row.get("test_metabolite_median_pcc"))}`）
+{prior_line}
+请先读架构脚本，再读下面两张表：
 
-| 文件 | 格式 | 用途 |
-| --- | --- | --- |
-| `contribution/contribution_pairs.csv` | 长表 | 一行 = 模型 × 源特征 × 目标特征 × **一种方法** |
-| `contribution/method_scores.csv` | 宽表 | 同一对把各方法分数放在不同列 |
-| `contribution/<model>_method_scores.csv` | 宽表 | 单模型 |
-| `contribution/biomaster_handoff.json` | JSON | 行数、方法列表、路径 |
-| `evaluation/evaluation.json` | JSON | 预测 PCC 等，不是归因分数 |
+| 文件 | 说明 |
+| --- | --- |
+| `{script or "src/models/generated/<model>.py"}` | 选定模型的实现（类、向量场、积分、读出头） |
+| `contribution/method_scores.csv` | 宽表：一对源–目标一行，列为 {", ".join(used) or "各方法"} |
+| `contribution/contribution_pairs.csv` | 长表：同一对拆成每种方法一行 |
 
-本任务是多模态：两个组学同时输入，预测下一时刻两个组学。
-
-不要使用旧产物里的 `ScientificConfidence` / `Novelty` / `classification` / `high_confidence_known_pairs.csv` / `novel_candidate_pairs.csv`——那些不再生成。
-
-## 当前预测结果
-
-{chr(10).join(metric_lines) if (metrics or []) else "_本次没有传入 evaluation 行。_"}
-
-先验（若有）：边数 `{(prior or {}).get("n_edges", "")}`，来源 `{",".join((prior or {}).get("sources") or [])}`，预训练 `{pretrained.get("method") or ""}`。
-
-## 当前归因摘要
-
-- 长表行数：`{contrib.get("n_rows", "")}`
-- 方法：{ ", ".join(contrib.get("methods") or []) }
-- 宽表：`{contrib.get("method_scores_csv") or "contribution/method_scores.csv"}`
-
-### Permutation 分数最高的若干对（仅示例，不是最终排序）
-
-{_rows_md(list(contrib.get("top_permutation") or []), [("model", "模型"), ("source_name", "源"), ("target_name", "目标"), ("score", "permutation")])}
-
-分数是**该目标内相对重要性**（行 L1 归一化），不是因果、也不是浓度变化。综合排序交给 BioMaster。
-
-## 各方法怎么计算
-
-矩阵形状 `(n_targets, n_expr)`。对每个目标（一行）做 L1 归一化，使该目标上各源特征分数之和为 1。只解释表达列，不解释时间差等 context。
-
-### coefficient
-
-线性模型取 `coef_` 绝对值再按目标归一化。MLP / ODE 等没有系数则此方法缺列。
-
-### occlusion / permutation
-
-测试集上打乱第 `i` 个源特征，看每个目标预测的平均绝对变化 `|Ŷ − Ŷ₀|`。两种方法同一思路、不同随机种子。
-
-### gradient
-
-中心有限差分：`ε = 0.01 × std(x_i)`（标准差太小时用 0.01），  
-`g = (Ŷ(x+εe_i) − Ŷ(x−εe_i)) / (2ε)`，再对样本取平均绝对梯度并归一化。这是局部灵敏度，不是训练时的反向传播。
-
-### shap
-
-仅线性模型：`shap.LinearExplainer`（interventional）。不用 Kernel SHAP。失败则用 `|x_centered × coef|` 均值。
-
-长表列：`model, source_feature, target_feature, source_name, target_name, source_modality, target_modality, method, score, prior`。  
-`prior` 只是网络里是否已有酶–代谢 / 通路共现（1 或 0.5 或 0），不是最终对评分。
-
-## 使用建议
-
-1. 用 `evaluation/metrics_by_method.xlsx` 或 `evaluation.json` 比较各机器学习模型。
-2. 把 `contribution_pairs.csv` 或 `method_scores.csv` 读进 BioMaster，在那边做置信度 / 新颖性 / 综合排序。
-3. 多模态任务只有一份表：`.../multimodal/contribution/`。
+分数是该目标内 L1 归一化后的相对重要性，不是因果。`prior` 列只是网络是否已有该对（1 / 0.5 / 0）。
 """
     dest.write_text(text, encoding="utf-8")
     return str(dest)

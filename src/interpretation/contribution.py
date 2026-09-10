@@ -27,6 +27,39 @@ from src.interpretation.explain import write_interpretation_markdown
 from src.prior.registry import PriorRegistry
 
 
+def selected_from_evaluation(bundle_path: str | Path) -> tuple[str, dict[str, Any]]:
+    ev_path = Path(bundle_path) / "evaluation" / "evaluation.json"
+    if not ev_path.exists():
+        return "", {}
+    payload = json.loads(ev_path.read_text(encoding="utf-8"))
+    selected = str(payload.get("selected_model") or "")
+    hparams: dict[str, Any] = {}
+    for row in payload.get("rows") or []:
+        if str(row.get("model") or "") != selected or row.get("error"):
+            continue
+        raw = row.get("hparams") or {}
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except json.JSONDecodeError:
+                raw = {}
+        if isinstance(raw, dict):
+            hparams = {k: v for k, v in raw.items() if k != "device"}
+        break
+    return selected, hparams
+
+
+def _build_kwargs(registry: ModelRegistry, name: str, hparams: dict[str, Any]) -> dict[str, Any]:
+    import inspect
+
+    try:
+        model = registry.build(name)
+        names = set(inspect.signature(model.__class__).parameters)
+    except Exception:
+        names = set(hparams)
+    return {k: v for k, v in hparams.items() if k in names}
+
+
 def _permutation(model: Any, bundle: ModelingBundle, seed: int) -> np.ndarray:
     x = np.asarray(bundle.test.X, dtype=float)
     pred0 = _predict_x(model, bundle, x)
@@ -103,6 +136,8 @@ def compute_contributions(
     organism: str = "human",
     prior_sources: list[str] | None = None,
     seed: int = 42,
+    selected_only: bool = True,
+    hparams: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     bundle = ModelingBundle.load(Path(bundle_path))
     apply_development_train(bundle)
@@ -112,13 +147,20 @@ def compute_contributions(
     dest = Path(bundle_path) / "contribution"
     dest.mkdir(parents=True, exist_ok=True)
     registry = ModelRegistry()
-    names = [name for name in models if name not in SKIP_MODELS]
+    ev_selected, ev_hparams = selected_from_evaluation(bundle_path)
+    if selected_only:
+        pick = ev_selected or (models[0] if models else "")
+        names = [pick] if pick and pick not in SKIP_MODELS else []
+        hparams = hparams if hparams is not None else ev_hparams
+    else:
+        names = [name for name in models if name not in SKIP_MODELS]
+        hparams = hparams or {}
     records: list[dict[str, Any]] = []
     methods_used = ["coefficient", "occlusion", "gradient", "permutation"]
     shap_ok = False
     for name in names:
         try:
-            model = registry.build(name)
+            model = registry.build(name, **_build_kwargs(registry, name, hparams or {}))
             model.fit(bundle)
         except Exception as exc:  # noqa: BLE001
             records.append({"model": name, "error": str(exc)})
@@ -217,7 +259,7 @@ def compute_contributions(
         bundle_path,
         contribution=handoff,
         metrics=None,
-        selected="",
-        prior=None,
+        selected=names[0] if names else ev_selected,
+        prior=prior.params() if hasattr(prior, "params") else None,
     )
     return handoff
