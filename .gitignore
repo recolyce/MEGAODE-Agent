@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+artifacts/**
+!artifacts/.gitkeep
+*.npy
+*.parquet
+.pytest_cache/
+.mypy_cache/
