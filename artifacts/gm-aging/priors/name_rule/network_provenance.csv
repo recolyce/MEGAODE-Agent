@@ -1,0 +1,2 @@
+source,date_accessed,url_or_file,version,license,notes
+name_rules,2026-09-06,src/prior/name_rule.py,1.0,internal rule set,"Missing edges are incomplete rules, not impossibility."

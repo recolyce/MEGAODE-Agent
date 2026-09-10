@@ -2,9 +2,9 @@ __pycache__/
 *.py[cod]
 .venv/
 .env
-artifacts/**
-!artifacts/.gitkeep
 *.npy
+!artifacts/**/*.npy
 *.parquet
+!artifacts/**/*.parquet
 .pytest_cache/
 .mypy_cache/

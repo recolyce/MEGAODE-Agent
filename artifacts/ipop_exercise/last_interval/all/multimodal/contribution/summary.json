@@ -1,0 +1,116 @@
+{
+  "dataset": "ipop_exercise",
+  "task": "last_interval",
+  "unit": "all",
+  "direction": "multimodal",
+  "lag_mode": "true",
+  "models": [
+    "embedding_field_ode"
+  ],
+  "methods": [
+    "coefficient",
+    "occlusion",
+    "gradient",
+    "permutation"
+  ],
+  "n_rows": 342732,
+  "contribution_csv": "artifacts/ipop_exercise/last_interval/all/multimodal/contribution/contribution_pairs.csv",
+  "method_scores_csv": "artifacts/ipop_exercise/last_interval/all/multimodal/contribution/method_scores.csv",
+  "schema": {
+    "grain": "one row = model \u00d7 source feature \u00d7 target feature \u00d7 method",
+    "score": "row-normalized magnitude within each target; BioMaster aggregates later",
+    "intended_consumer": "BioMaster"
+  },
+  "top_permutation": [
+    {
+      "model": "embedding_field_ode",
+      "source_name": "Sh3gl3",
+      "target_name": "Sh3gl3",
+      "score": 0.02574905327759098
+    },
+    {
+      "model": "embedding_field_ode",
+      "source_name": "Androsterone glucuronide(1)",
+      "target_name": "Androsterone glucuronide(1)",
+      "score": 0.025378615490209023
+    },
+    {
+      "model": "embedding_field_ode",
+      "source_name": "Alliin",
+      "target_name": "Alliin",
+      "score": 0.022626034374066527
+    },
+    {
+      "model": "embedding_field_ode",
+      "source_name": "Glucosyl-glycerol",
+      "target_name": "Glucosyl-glycerol",
+      "score": 0.02247890522694562
+    },
+    {
+      "model": "embedding_field_ode",
+      "source_name": "11-beta-Hydroxyandrosterone-3-glucuronide",
+      "target_name": "11-beta-Hydroxyandrosterone-3-glucuronide",
+      "score": 0.02198375458717823
+    },
+    {
+      "model": "embedding_field_ode",
+      "source_name": "Corticosterone",
+      "target_name": "Corticosterone",
+      "score": 0.021951754464933155
+    },
+    {
+      "model": "embedding_field_ode",
+      "source_name": "Homostachydrine",
+      "target_name": "Homostachydrine",
+      "score": 0.02114769086151991
+    },
+    {
+      "model": "embedding_field_ode",
+      "source_name": "Betonicine",
+      "target_name": "Betonicine",
+      "score": 0.02076359179148751
+    },
+    {
+      "model": "embedding_field_ode",
+      "source_name": "Apoa4",
+      "target_name": "Apoa4",
+      "score": 0.020137292964893826
+    },
+    {
+      "model": "embedding_field_ode",
+      "source_name": "Chenodeoxycholic acid 3-sulfate(2)",
+      "target_name": "Chenodeoxycholic acid 3-sulfate(2)",
+      "score": 0.019928790934629452
+    },
+    {
+      "model": "embedding_field_ode",
+      "source_name": "gamma-glutamylphenylalanine",
+      "target_name": "gamma-glutamylphenylalanine",
+      "score": 0.019799678085865833
+    },
+    {
+      "model": "embedding_field_ode",
+      "source_name": "Ectoine",
+      "target_name": "Ectoine",
+      "score": 0.019755812486786085
+    },
+    {
+      "model": "embedding_field_ode",
+      "source_name": "3-Methylhistidine",
+      "target_name": "3-Methylhistidine",
+      "score": 0.019677467520589405
+    },
+    {
+      "model": "embedding_field_ode",
+      "source_name": "Caffeine",
+      "target_name": "Theophylline",
+      "score": 0.019362441093578785
+    },
+    {
+      "model": "embedding_field_ode",
+      "source_name": "Gp5",
+      "target_name": "Gp5",
+      "score": 0.01920904123172539
+    }
+  ]
+}

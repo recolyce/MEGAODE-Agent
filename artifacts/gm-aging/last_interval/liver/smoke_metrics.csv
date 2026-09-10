@@ -1,0 +1,4 @@
+model,median_pcc,n_test,definition,alpha
+train_mean,0.0,10,,
+last_value,0.16592785979169383,10,same-trajectory Y at x_time (true lag: same subject; pseudo: tissue|sex|replicate),
+ridge,0.16960960235153755,10,,10.0

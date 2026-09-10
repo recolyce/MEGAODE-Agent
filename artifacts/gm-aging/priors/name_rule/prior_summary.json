@@ -1,0 +1,21 @@
+{
+  "name": "name_rule",
+  "n_edges": 1301,
+  "relationships": {
+    "metabolite_to_pathway": 935,
+    "protein_to_pathway": 294,
+    "enzyme_to_metabolite_reaction": 72
+  },
+  "n_groups": 5,
+  "pretrained": {
+    "method": "fingerprint_or_empty",
+    "n_protein": 0,
+    "n_metabolite": 0,
+    "notes": [
+      "Protein ESM/ProtT5 weights are not downloaded in this milestone.",
+      "Pass protein_table={feature_id: vector} to inject an external embedding.",
+      "No usable SMILES in metabolite_annotations"
+    ]
+  },
+  "warnings": []
+}

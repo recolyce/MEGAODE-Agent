@@ -1,0 +1,61 @@
+{
+  "name": "name_rule+kegg_reactome+string+stitch+pretrained",
+  "sources": [
+    "name_rule",
+    "kegg_reactome",
+    "string",
+    "stitch",
+    "pretrained"
+  ],
+  "n_edges": 8385,
+  "relationships": {
+    "protein_protein_interaction": 6438,
+    "protein_to_pathway": 1306,
+    "metabolite_to_pathway": 423,
+    "enzyme_to_metabolite_reaction": 218
+  },
+  "n_groups": 557,
+  "pretrained": {
+    "method": "esm2_t12_35M+unimol2_84m",
+    "n_protein": 197,
+    "n_metabolite": 141,
+    "notes": [
+      "ESM-2 35M embeddings from cache (186 proteins)",
+      "Uni-Mol2 84M embeddings from cache (141 metabolites)"
+    ]
+  },
+  "features": {
+    "sources": [
+      "name_rule",
+      "kegg_reactome",
+      "string",
+      "stitch",
+      "pretrained"
+    ],
+    "laplacian": [
+      341,
+      341
+    ],
+    "adjacency": [
+      341,
+      341
+    ],
+    "n_groups": 0,
+    "protein_emb": [
+      338,
+      480
+    ],
+    "metabolite_emb": [
+      338,
+      768
+    ],
+    "n_pair_prior": 1524,
+    "notes": [
+      "STRING adjacency padded onto the protein block of joint nodes",
+      "STRING/proxy adjacency added to Laplacian",
+      "ESM-2 35M embeddings from cache (186 proteins)",
+      "Uni-Mol2 84M embeddings from cache (141 metabolites)"
+    ]
+  },
+  "warnings": []
+}
