@@ -124,9 +124,20 @@ def build_kegg_reactome_network(
 
     id_cols = [
         c
-        for c in ("uniprot_accession", "uniprot_ids", "uniprot_ids_all", "uniprot_swissprot")
+        for c in ("uniprot_accession", "uniprot_ids", "uniprot_ids_all", "uniprot_swissprot", "uniprot")
         if c in protein_ann.columns
     ]
+    symbol_to_org: dict[str, set[str]] = defaultdict(set)
+    gene_list = cache / f"list_{org}_genes.txt"
+    if gene_list.exists() and gene_list.stat().st_size:
+        for left, right in _two_col(gene_list):
+            kegg_gene = left if left.startswith(prefix) else right
+            names = right if left.startswith(prefix) else left
+            symbols = names.split(";")[0]
+            for sym in symbols.split(","):
+                key = sym.strip().upper()
+                if key:
+                    symbol_to_org[key].add(kegg_gene)
     edges: list[dict[str, str]] = []
     protein_paths: dict[str, set[str]] = defaultdict(set)
     for rec in protein_ann.to_dict("records"):
@@ -134,22 +145,10 @@ def build_kegg_reactome_network(
         accessions: list[str] = []
         for col in id_cols:
             accessions.extend(_tokens(rec.get(col)))
+        symbol = str(rec.get("gene_symbol") or rec.get("string_preferred_name") or "").split(";")[0].strip().upper()
+        kegg_genes: set[str] = set()
         for acc in accessions:
-            for gene in uniprot_to_org.get(acc, ()):
-                for pathway in org_to_path.get(gene, ()):
-                    protein_paths[feat].add(pathway)
-                    edges.append(
-                        {
-                            "source_node": feat,
-                            "target_node": pathway,
-                            "relationship": "protein_to_pathway",
-                            "database": "KEGG",
-                            "evidence": f"{acc}->{gene}",
-                            "confidence": "high",
-                            "reference": KEGG_REF,
-                            "via": path_names.get(pathway, pathway),
-                        }
-                    )
+            kegg_genes.update(uniprot_to_org.get(acc, ()))
             for pathway in uniprot_to_reactome.get(acc, ()):
                 protein_paths[feat].add(pathway)
                 edges.append(
@@ -162,6 +161,24 @@ def build_kegg_reactome_network(
                         "confidence": "high",
                         "reference": REACTOME_REF,
                         "via": pathway,
+                    }
+                )
+        if symbol:
+            kegg_genes.update(symbol_to_org.get(symbol, ()))
+        for gene in kegg_genes:
+            for pathway in org_to_path.get(gene, ()):
+                protein_paths[feat].add(pathway)
+                evidence = f"{symbol}->{gene}" if symbol else gene
+                edges.append(
+                    {
+                        "source_node": feat,
+                        "target_node": pathway,
+                        "relationship": "protein_to_pathway",
+                        "database": "KEGG",
+                        "evidence": evidence,
+                        "confidence": "high",
+                        "reference": KEGG_REF,
+                        "via": path_names.get(pathway, pathway),
                     }
                 )
 
@@ -183,9 +200,9 @@ def build_kegg_reactome_network(
     metabolite_paths: dict[str, set[str]] = defaultdict(set)
     for rec in metabolite_ann.to_dict("records"):
         feat = str(rec["feature_id"])
-        hmdb = _pad_hmdb(rec.get("hmdb_id") or rec.get("database_identifier"))
+        hmdb = _pad_hmdb(rec.get("hmdb_id") or rec.get("hmdb") or rec.get("database_identifier"))
         kegg_ids = set(hmdb_to_kegg.get(hmdb, ()))
-        raw_kegg = str(rec.get("kegg_id") or "").replace("cpd:", "").strip()
+        raw_kegg = str(rec.get("kegg_id") or rec.get("kegg") or "").replace("cpd:", "").strip()
         if raw_kegg and raw_kegg.lower() != "nan":
             kegg_ids.add(raw_kegg)
         for kegg in kegg_ids:

@@ -20,6 +20,38 @@ try:
 except ImportError:  # pragma: no cover
     yaml = None
 
+PROTEIN_ID_CANDIDATES = ("protein_id", "feature_id", "original_id")
+METABOLITE_ID_CANDIDATES = ("metabolite_id", "feature_id", "original_id")
+# BioMaster templates vary; keep canonical names the prior/STRING/KEGG code already reads.
+ANNOTATION_ALIASES = (
+    ("kegg", "kegg_id"),
+    ("hmdb", "hmdb_id"),
+    ("chebi", "chebi_id"),
+    ("uniprot", "uniprot_swissprot"),
+)
+
+
+def _resolve_id_column(ann: pd.DataFrame, matrix_cols: list[str], candidates: tuple[str, ...], label: str) -> str:
+    overlap: list[tuple[int, str]] = []
+    wanted = set(map(str, matrix_cols))
+    for col in candidates:
+        if col not in ann.columns:
+            continue
+        hit = len(wanted.intersection(ann[col].astype(str)))
+        overlap.append((hit, col))
+    if overlap:
+        overlap.sort(key=lambda item: (-item[0], candidates.index(item[1])))
+        return overlap[0][1]
+    raise TemplateError(f"{label} annotations need one of {candidates}")
+
+
+def _alias_annotation_columns(ann: pd.DataFrame) -> pd.DataFrame:
+    out = ann.copy()
+    for src, dest in ANNOTATION_ALIASES:
+        if src in out.columns and dest not in out.columns:
+            out[dest] = out[src]
+    return out
+
 
 def _read_manifest(path: Path) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
@@ -92,12 +124,18 @@ def load_biomaster(source: Path) -> BioMasterDataset:
     metabolomics = metabolomics.loc[metadata["sample_id"]]
     protein_ann = pd.read_csv(root / "protein_annotations.csv")
     metabolite_ann = pd.read_csv(root / "metabolite_annotations.csv")
-    id_col_p = "protein_id" if "protein_id" in protein_ann.columns else "feature_id"
-    id_col_m = "metabolite_id" if "metabolite_id" in metabolite_ann.columns else "feature_id"
-    protein_ann = protein_ann.rename(columns={id_col_p: "feature_id"})
-    metabolite_ann = metabolite_ann.rename(columns={id_col_m: "feature_id"})
+    id_col_p = _resolve_id_column(protein_ann, list(proteomics.columns), PROTEIN_ID_CANDIDATES, "protein")
+    id_col_m = _resolve_id_column(
+        metabolite_ann, list(metabolomics.columns), METABOLITE_ID_CANDIDATES, "metabolite"
+    )
+    if id_col_p != "feature_id":
+        protein_ann = protein_ann.rename(columns={id_col_p: "feature_id"})
+    if id_col_m != "feature_id":
+        metabolite_ann = metabolite_ann.rename(columns={id_col_m: "feature_id"})
     protein_ann["feature_id"] = protein_ann["feature_id"].astype(str)
     metabolite_ann["feature_id"] = metabolite_ann["feature_id"].astype(str)
+    protein_ann = _alias_annotation_columns(protein_ann)
+    metabolite_ann = _alias_annotation_columns(metabolite_ann)
     report = (root / "preprocessing_report.md").read_text(encoding="utf-8")
     manifest_text = (root / "dataset_manifest.yaml").read_text(encoding="utf-8")
     manifest = _read_manifest(root / "dataset_manifest.yaml")

@@ -51,9 +51,10 @@ class PriorAttachment:
 def annotation_prior_hints(data: BioMasterDataset) -> dict[str, Any]:
     protein = data.protein_annotations
     met = data.metabolite_annotations
-    has_uniprot = any(c in protein.columns for c in ("uniprot_accession", "uniprot_ids", "uniprot_swissprot"))
-    has_kegg_met = "kegg_id" in met.columns and met["kegg_id"].notna().any()
-    has_hmdb = any(c in met.columns for c in ("hmdb_id", "database_identifier"))
+    has_uniprot = any(c in protein.columns for c in ("uniprot_accession", "uniprot_ids", "uniprot_swissprot", "uniprot"))
+    kegg_col = next((c for c in ("kegg_id", "kegg") if c in met.columns), None)
+    has_kegg_met = bool(kegg_col and met[kegg_col].notna().any())
+    has_hmdb = any(c in met.columns for c in ("hmdb_id", "hmdb", "database_identifier"))
     has_string = "string_preferred_name" in protein.columns
     has_smiles = "smiles" in met.columns
     suggested = ["name_rule", "pretrained"]

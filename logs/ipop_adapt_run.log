@@ -1,0 +1,26 @@
+Traceback (most recent call last):
+  File "/opt/mamba/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/opt/mamba/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/personal/workspace/TMO-agent-cursor-data-ready/src/api/run.py", line 58, in <module>
+    main()
+  File "/personal/workspace/TMO-agent-cursor-data-ready/src/api/run.py", line 46, in main
+    final = run_pipeline(state)
+  File "/personal/workspace/TMO-agent-cursor-data-ready/src/api/graph.py", line 481, in run_pipeline
+    final = build_pipeline().invoke(state)
+  File "/opt/mamba/lib/python3.10/site-packages/langgraph/pregel/main.py", line 3913, in invoke
+    for chunk in self.stream(
+  File "/opt/mamba/lib/python3.10/site-packages/langgraph/pregel/main.py", line 2967, in stream
+    for _ in runner.tick(
+  File "/opt/mamba/lib/python3.10/site-packages/langgraph/pregel/_runner.py", line 207, in tick
+    run_with_retry(
+  File "/opt/mamba/lib/python3.10/site-packages/langgraph/pregel/_retry.py", line 617, in run_with_retry
+    return task.proc.invoke(task.input, config)
+  File "/opt/mamba/lib/python3.10/site-packages/langgraph/_internal/_runnable.py", line 707, in invoke
+    input = context.run(step.invoke, input, config, **kwargs)
+  File "/opt/mamba/lib/python3.10/site-packages/langgraph/_internal/_runnable.py", line 447, in invoke
+    ret = self.func(*args, **kwargs)
+  File "/personal/workspace/TMO-agent-cursor-data-ready/src/api/graph.py", line 106, in plan_node
+    raise RuntimeError("TMO_LLM_API_KEY required for plan; deterministic defaults are disabled")
+RuntimeError: TMO_LLM_API_KEY required for plan; deterministic defaults are disabled
