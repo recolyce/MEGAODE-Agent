@@ -1,0 +1,14 @@
+dataset_name: demo
+n_subjects: 2
+n_samples: 4
+n_timepoints: 2
+n_proteins: 3
+n_metabolites: 3
+n_paired_samples: 4
+transforms: none
+scaling: deferred
+missingness: none
+batch: B1
+deferred_preprocessing:
+  - scaling
+  - learned imputation

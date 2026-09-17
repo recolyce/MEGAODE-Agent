@@ -1,0 +1,8 @@
+{
+  "name": "name_rule",
+  "sources": [
+    "name_rule"
+  ],
+  "n_edges": 2,
+  "path": "/personal/workspace/TMO-agent-cursor-data-ready/skill/megaode-timeseries-multiomics/tests/fixtures/artifacts/demo/priors/name_rule"
+}

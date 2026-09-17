@@ -1,0 +1,14 @@
+{
+  "dataset": "demo",
+  "unit": "liver",
+  "direction": "multimodal",
+  "models": [
+    "mlp"
+  ],
+  "methods": [
+    "gradient",
+    "permutation",
+    "coefficient"
+  ],
+  "n_rows": 4
+}

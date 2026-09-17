@@ -1,0 +1,10 @@
+n_high_variance: 512
+scale: true
+impute: median
+unit_mode: by_tissue
+directions:
+  - proteomics_to_metabolomics
+  - metabolomics_to_proteomics
+clock_scale: auto
+seed: 42
+prior: name_rule

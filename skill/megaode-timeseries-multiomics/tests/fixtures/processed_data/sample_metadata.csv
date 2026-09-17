@@ -1,0 +1,5 @@
+sample_id,subject_id,time,time_unit,condition,batch
+S1,U1,0,day,baseline,B1
+S2,U1,1,day,treated,B1
+S3,U2,0,day,baseline,B1
+S4,U2,1,day,treated,B1

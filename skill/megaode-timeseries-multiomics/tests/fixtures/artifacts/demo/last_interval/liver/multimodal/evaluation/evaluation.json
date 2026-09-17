@@ -1,0 +1,27 @@
+{
+  "round": 1,
+  "selected_model": "mlp",
+  "rows": [
+    {
+      "model": "mlp",
+      "model_role": "library_learned",
+      "test_median_pcc": 0.42,
+      "val_median_pcc": 0.4,
+      "error": ""
+    },
+    {
+      "model": "neural_ode",
+      "model_role": "library_learned",
+      "test_median_pcc": 0.31,
+      "val_median_pcc": 0.29,
+      "error": ""
+    },
+    {
+      "model": "toy_ode",
+      "model_role": "generated",
+      "test_median_pcc": 0.22,
+      "val_median_pcc": 0.2,
+      "error": ""
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+numpy
+pandas
+scikit-learn
+torch
+pyyaml
+openpyxl
+optuna
+langgraph
+langchain-openai
+langchain-core
+shap

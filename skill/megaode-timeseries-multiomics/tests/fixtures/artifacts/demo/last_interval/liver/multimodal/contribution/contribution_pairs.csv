@@ -1,0 +1,5 @@
+model,source_feature,source_name,source_modality,target_feature,target_name,target_modality,method,score,signed_score,prior
+mlp,P1,GENE1,proteomics,M1,met1,metabolomics,gradient,0.8,0.5,0.0
+mlp,P1,GENE1,proteomics,M1,met1,metabolomics,permutation,0.7,,0.0
+mlp,P1,GENE1,proteomics,P2,GENE2,proteomics,gradient,0.9,-0.2,0.0
+mlp,M2,met2,metabolomics,P3,GENE3,proteomics,coefficient,0.4,0.1,0.5

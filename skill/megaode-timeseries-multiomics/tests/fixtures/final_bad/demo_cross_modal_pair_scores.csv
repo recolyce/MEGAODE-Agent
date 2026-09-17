@@ -1,0 +1,2 @@
+dataset,unit,source_modality,source_id,source_name,target_modality,target_id,target_name,direction,models_supporting,raw_attribution_summary,attribution_score,model_consistency_score,context_score,direction_consistency_score,stability_score,experimental_priority_score,experimental_priority_rank,experimental_priority_percentile,selected_for_literature_validation,literature_evidence_level,classification,notes
+demo,liver,proteomics,P1,GENE1,proteomics,P2,GENE2,multimodal,mlp,gradient=0.9,90,NA,80,NA,NA,85,1,100,True,NA,not_literature_reviewed,same-modality fixture
