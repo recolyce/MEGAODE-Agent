@@ -7,6 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.models.adapted import DeepCCAFusionModel, DualNeuralODEModel, TimeFilmModel, TimeGRUModel
 from src.models.graph_ode import GraphOmicsODEModel
 from src.models.multimodal import (
     CrossAttnFusionModel,
@@ -18,6 +19,7 @@ from src.models.multimodal import (
 )
 from src.models.neural import FeatureChunkLSTMModel, MLPModel, NeuralODEModel
 from src.models.prior_fusion import PriorFusionMLPModel
+from src.models.references import list_reference_modules
 
 Factory = Callable[..., Any]
 
@@ -34,6 +36,10 @@ MODELS: dict[str, tuple[Factory, bool]] = {
     "mogonet_fusion": (MogonetFusionModel, False),
     "graph_omics_ode": (GraphOmicsODEModel, True),
     "prior_fusion_mlp": (PriorFusionMLPModel, True),
+    "time_film": (TimeFilmModel, False),
+    "time_gru": (TimeGRUModel, False),
+    "deep_cca_fusion": (DeepCCAFusionModel, False),
+    "dual_neural_ode": (DualNeuralODEModel, False),
 }
 
 GENERATED: dict[str, tuple[Factory, bool]] = {}
@@ -94,6 +100,10 @@ _load_generated()
 
 def available_models() -> list[str]:
     return list(MODELS) + [name for name in GENERATED if name not in MODELS]
+
+
+def reference_modules() -> list[dict[str, Any]]:
+    return list_reference_modules()
 
 
 def model_role(name: str) -> str:

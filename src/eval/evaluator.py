@@ -32,6 +32,10 @@ TORCH_MODELS = {
     "dual_lstm",
     "mmvae_forecast",
     "mogonet_fusion",
+    "time_film",
+    "time_gru",
+    "deep_cca_fusion",
+    "dual_neural_ode",
 }
 
 
@@ -196,6 +200,32 @@ def _suggest(trial: Any, name: str, factory: Any) -> dict[str, Any]:
             "epochs": trial.suggest_categorical("epochs", [30, 50]),
             "lr": trial.suggest_float("lr", 1e-4, 3e-3, log=True),
         }
+    if name == "time_film":
+        return {
+            "hidden": trial.suggest_categorical("hidden", [64, 128, 256]),
+            "epochs": trial.suggest_categorical("epochs", [30, 50, 80]),
+            "lr": trial.suggest_float("lr", 1e-4, 3e-3, log=True),
+        }
+    if name == "time_gru":
+        return {
+            "hidden": trial.suggest_categorical("hidden", [32, 64, 128]),
+            "epochs": trial.suggest_categorical("epochs", [30, 50]),
+            "lr": trial.suggest_float("lr", 1e-4, 3e-3, log=True),
+        }
+    if name == "deep_cca_fusion":
+        return {
+            "hidden": trial.suggest_categorical("hidden", [32, 64, 128]),
+            "latent": trial.suggest_categorical("latent", [8, 16, 32]),
+            "align": trial.suggest_float("align", 1e-3, 3e-1, log=True),
+            "epochs": trial.suggest_categorical("epochs", [30, 50]),
+            "lr": trial.suggest_float("lr", 1e-4, 3e-3, log=True),
+        }
+    if name == "dual_neural_ode":
+        return {
+            "hidden": trial.suggest_categorical("hidden", [16, 32, 64]),
+            "epochs": trial.suggest_categorical("epochs", [20, 40, 60]),
+            "lr": trial.suggest_float("lr", 1e-4, 3e-3, log=True),
+        }
     params: dict[str, Any] = {}
     try:
         names = set(inspect.signature(factory).parameters)
@@ -270,6 +300,9 @@ def evaluate_models(
             with _swap_train_val(bundle, fold_train, fold_val):
                 hparams, val_optuna = _tune(registry, name, bundle, n_trials)
                 model = _fit_one(registry, name, bundle, hparams)
+                from src.models.harness import check_cross_modal_flow
+
+                check_cross_modal_flow(model, bundle)
                 val_pred = _predict_split(model, bundle, "val") if len(bundle.val.X) else None
                 test_pred = _predict_split(model, bundle, "test")
                 params = model.params()

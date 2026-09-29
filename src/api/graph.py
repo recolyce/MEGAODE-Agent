@@ -287,7 +287,8 @@ def _decide_rewrite(state: PipelineState, summary: dict[str, Any]) -> tuple[bool
     instruction = (
         f"Best learned model {best} test median PCC={best_pcc:.4f} on multimodal next-time forecast. "
         "Write a different prior-injected dynamical ODE that takes both omics and predicts both. "
-        "RK4 over last_interval dt. Do not write ridge / elastic-net / output smoother. "
+        "RK4 over last_interval dt. Mix protein and metabolite states so each modality's outputs "
+        "depend on the other (no per-node independent maps). Do not write ridge / elastic-net / output smoother. "
         f"Do not reuse {generated}."
     )
     if not has_llm_key():

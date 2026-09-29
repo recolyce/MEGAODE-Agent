@@ -62,13 +62,16 @@ def _load_class(path: Path, class_name: str):
 
 
 def _smoke(cls: type, bundle: ModelingBundle) -> dict[str, Any]:
+    from src.models.harness import check_cross_modal_flow
+
     model = cls()
     model.fit(bundle)
     pred = model.predict(bundle)
     y = bundle.test.Y
     if pred.shape != y.shape:
         raise ValueError(f"predict shape {pred.shape} != Y {y.shape}")
-    return {"ok": True, "shape": list(pred.shape)}
+    flow = check_cross_modal_flow(model, bundle)
+    return {"ok": True, "shape": list(pred.shape), "cross_modal_flow": flow}
 
 
 def write_generated(model_name: str, class_name: str, code: str, bundle: ModelingBundle) -> dict[str, Any]:

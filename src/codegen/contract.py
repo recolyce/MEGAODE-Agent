@@ -120,6 +120,9 @@ Model rules:
 - The new model MUST be a prior-injected dynamical ODE (same family as graph_omics_ode):
   protein+metabolite graph or embedding-conditioned vector field, integrate hidden state over last_interval dt (RK2/RK4), then a head to both-omics Y.
 - Task is multimodal: X = [proteins | metabolites | context], Y = [proteins | metabolites] at the next time.
+- Cross-modal flow is required (smoke harness): protein outputs must change when metabolite inputs are perturbed, and vice versa. Attribution needs those gradients.
+  Forbidden: per-node Linear(1) encoder + independent ODE + per-node Linear(hidden,1) head (Y_j depends only on X_j).
+  Required mix: GCN / flatten-all-nodes head / dual-stream fuse into a joint readout. Frozen embeddings alone do not count as mixing current X.
 - Use bundle.prior.laplacian / features.adjacency / protein_emb / metabolite_emb. Read graph_ode.normalized_adjacency.
 - New snake_case name. Do NOT write ridge, elastic-net, GBM, output Laplacian smoother, or copy graph_omics_ode's class name.
 - Class: name, requires_prior=True, fit(bundle), predict(bundle), params().

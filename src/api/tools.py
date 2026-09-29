@@ -15,7 +15,7 @@ from src.curator.tasks.last_interval import detect_lag_mode
 from src.eval.evaluator import evaluate_models
 from src.eval.metrics import median_pcc
 from src.interpretation.contribution import compute_contributions
-from src.models.registry import MODELS, ModelRegistry, model_role
+from src.models.registry import MODELS, ModelRegistry, model_role, reference_modules
 from src.prior.registry import PriorRegistry, annotation_prior_hints
 
 
@@ -47,6 +47,7 @@ def inspect_dataset(source: str) -> dict[str, Any]:
             {"name": name, "requires_prior": need, "role": model_role(name)}
             for name, (_f, need) in MODELS.items()
         ],
+        "reference_modules": reference_modules(),
         "available_priors": PriorRegistry().available(),
         "prior_hints": annotation_prior_hints(data),
     }
